@@ -13,27 +13,61 @@ def file_parser(file: str | Path):
     else:
         path_obj = Path(file)
         if path_obj.is_absolute():
-            filename = file.name
-            filesize = file.stat().st_size
+            filename = path_obj.name
+            filesize = path_obj.stat().st_size
             return (filename, filesize)
         raise OperationError('File not found!')
 
 def recv_all(sock, total):
-    
+    expected_bytes = total
+    received_bytes = 0
 
-def send_file(sock: socket.socket, file: str | Path):
+    stream = bytes()
+
+    while received_bytes < expected_bytes:
+        chunk = sock.recv(expected_bytes - received_bytes)
+        received_bytes += len(chunk)
+        stream += chunk
+    
+    return received_bytes
+
+def header_send(sock: socket.socket, file: str | Path):
     filename, filesize = file_parser(file)
     # initializing header
-    fmt = '!Q'
-    fname_b = bytes(filename)
-    fsize_b = bytes(filesize)
-    stream = fname_b + fsize_b
-    header = struct.pack(fmt, stream)
+    fmt = '!QQ'
+    fname_b = filename.encode()
+    print(fname_b)
+    fsize = bytes(filesize)
+    header = struct.pack(fmt, fname_b, fsize)
 
     sock.sendall(header)
 
-    with socket.create_connection(('127.0.0.1', 2001)) as connection:
-        send_file(connection, r'I:\MyProjects\figuritta\goals.txt')
+def header_recv(sock):
+        fmt = '!QQ'
+        fmt_size = struct.calcsize(fmt)
 
-        while True:
-            msg = recv_all()
+        header = recv_all(sock, fmt_size)
+
+        filename, filesize = struct.unpack(fmt, header)
+        print(filename, filesize)
+
+if __name__ == '__main__':
+    while True:
+        try:
+            print('1- Send')
+            print('2- Receive')
+            choice = input('Which one? ')
+
+            if choice in ('1', '2') and choice == '1':
+                with socket.create_connection(('127.0.0.1', 2001)) as client:
+                    header_send(client, r"I:\MyProjects\figuritta\icon.png")
+            elif choice in ('1', '2') and choice == '2':
+                with socket.create_server(('127.0.0.1', 2001)) as server:
+                    connection, address = server.accept()
+                    print(f'Established: "{address[0]:{address[1]}}"')
+                    header_recv(connection)
+            else:
+                print('Invalid response!')
+                continue
+        except KeyboardInterrupt:
+            break
