@@ -29,18 +29,19 @@ def recv_all(sock, total):
         received_bytes += len(chunk)
         stream += chunk
     
-    return received_bytes
+    return stream
 
 def header_send(sock: socket.socket, file: str | Path):
     filename, filesize = file_parser(file)
     # initializing header
     fmt = '!QQ'
     fname_b = filename.encode()
-    print(fname_b)
-    fsize = bytes(filesize)
-    header = struct.pack(fmt, fname_b, fsize)
+    fname_length = len(fname_b)
 
-    sock.sendall(header)
+    header = struct.pack(fmt, filesize, fname_length)
+    packet = header + fname_b
+
+    sock.sendall(packet)
 
 def header_recv(sock):
         fmt = '!QQ'
@@ -48,8 +49,10 @@ def header_recv(sock):
 
         header = recv_all(sock, fmt_size)
 
-        filename, filesize = struct.unpack(fmt, header)
-        print(filename, filesize)
+        filesize, fname_length = struct.unpack(fmt, header)
+        # print(filesize, fname_length)
+        fname_b = recv_all(sock, fname_length)
+        print(fname_b)
 
 if __name__ == '__main__':
     while True:
@@ -64,7 +67,7 @@ if __name__ == '__main__':
             elif choice in ('1', '2') and choice == '2':
                 with socket.create_server(('127.0.0.1', 2001)) as server:
                     connection, address = server.accept()
-                    print(f'Established: "{address[0]:{address[1]}}"')
+                    # print(f'Established: "{address[0]:{address[1]}}"')
                     header_recv(connection)
             else:
                 print('Invalid response!')
