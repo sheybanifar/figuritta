@@ -1,3 +1,0 @@
-* Send one file
-* Send multiple files
-* Resolve non-numeric ip addresses

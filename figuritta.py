@@ -33,23 +33,6 @@ def recv_all(sock, total):
     
     return stream
 
-# class Header:
-#     def __init__(self, msg_type=None, *args) -> None:
-#         self.msg_type = msg_type
-        
-#         self.filename, self.filesize = get_size(*args)
-
-
-# class Payload:
-#     def __init__(self) -> None:
-#         self.filename_len = None
-#         self.filename = None
-#         self.filesize = None
-#         self.file_data = None
-    
-#     def get_size(self):
-
-
 def inform(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
     fname_b = filename.encode()
@@ -97,8 +80,9 @@ if __name__ == '__main__':
             choice = input('Which one? ')
 
             if choice in ('1', '2') and choice == '1':
+                file = input('Enter file path to send: ')
                 with socket.create_connection(('127.0.0.1', 2001)) as client:
-                    header_send(client, r"")
+                    inform(client, file)
             elif choice in ('1', '2') and choice == '2':
                 with socket.create_server(('127.0.0.1', 2001)) as server:
                     connection, address = server.accept()
