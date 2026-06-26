@@ -2,17 +2,19 @@ import socket
 import struct
 from pathlib import Path
 
+INFORM = 'INFORM_FILE_DATA'
+
 class OperationError(Exception):
     pass
 
-def file_parser(file: str | Path):
+def get_size(file: str | Path):
     if isinstance(file, Path) and file.exists():
         filename = file.name
         filesize = file.stat().st_size
         return (filename, filesize)
     else:
         path_obj = Path(file)
-        if path_obj.is_absolute():
+        if path_obj.exists():
             filename = path_obj.name
             filesize = path_obj.stat().st_size
             return (filename, filesize)
@@ -31,8 +33,23 @@ def recv_all(sock, total):
     
     return stream
 
+class Header:
+    def __init__(self, msg_type=None, payload_size=None) -> None:
+        self.msg_type = msg_type
+        self.payload_size = payload_size
+
+class Payload:
+    def __init__(self) -> None:
+        self.filename_len = None
+        self.filename = None
+        self.filesize = None
+        self.file_data = None
+    
+    def get_size(self):
+
+
 def header_send(sock: socket.socket, file: str | Path):
-    filename, filesize = file_parser(file)
+    filename, filesize = get_size(file)
     # initializing header
     fmt = '!QQ'
     fname_b = filename.encode()
@@ -63,7 +80,7 @@ if __name__ == '__main__':
 
             if choice in ('1', '2') and choice == '1':
                 with socket.create_connection(('127.0.0.1', 2001)) as client:
-                    header_send(client, r"I:\MyProjects\figuritta\icon.png")
+                    header_send(client, r"")
             elif choice in ('1', '2') and choice == '2':
                 with socket.create_server(('127.0.0.1', 2001)) as server:
                     connection, address = server.accept()
