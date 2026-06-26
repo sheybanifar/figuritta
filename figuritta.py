@@ -2,8 +2,6 @@ import socket
 import struct
 from pathlib import Path
 
-INFORM_FILE_DATA = 1
-
 class OperationError(Exception):
     pass
 
@@ -33,44 +31,29 @@ def recv_all(sock, total):
     
     return stream
 
-def inform(sock: socket.socket, file: str | Path):
+def send_file(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
-    fname_b = filename.encode()
-    fname_length = len(fname_b)
+    fmt = '!Q'
+    filesize_b = struct.pack(fmt, filesize)
 
-    payload = (
-        struct.pack('!H', fname_length)
-        + fname_b
-        + struct.pack('!Q', filesize)
-    )
+    sock.sendall(filesize_b)
 
-    header = struct.pack('!HQ', INFORM_FILE_DATA, len(payload))
+    with open(file, mode='br') as f:
+        while read_bytes := f.read(1024):
+            sock.sendall(read_bytes)
 
-    packet = header + payload
+def receive_file_info(sock):
+    amount = struct.calcsize('!Q')
+    received_bytes = recv_all(sock, amount)
 
-    sock.sendall(packet)
+    filesize = struct.unpack('!Q', received_bytes)[0]
 
-def get_inform(sock, payload_len):
-    offset = 0
-    payload = recv_all(sock, payload_len)
+    return filesize
 
-    fname_len = struct.unpack(
-        '!H',
-        payload[offset:offset + struct.calcsize('!H')]
-    )[0]
+def receive_file(sock):
+    filesize = receive_file_info(sock)
 
-    offset += struct.calcsize('!H')
-
-    filename = payload[offset:offset + fname_len].decode()
-
-    offset += fname_len
-
-    filesize = struct.unpack(
-        '!Q',
-        payload[offset:]
-    )[0]
-
-    print(f'{filename} -> {filesize} B')
+    with open()
 
 if __name__ == '__main__':
     while True:
