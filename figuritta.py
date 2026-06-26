@@ -2,7 +2,7 @@ import socket
 import struct
 from pathlib import Path
 
-INFORM = 'INFORM_FILE_DATA'
+INFORM_FILE_DATA = 1
 
 class OperationError(Exception):
     pass
@@ -33,43 +33,61 @@ def recv_all(sock, total):
     
     return stream
 
-class Header:
-    def __init__(self, msg_type=None, payload_size=None) -> None:
-        self.msg_type = msg_type
-        self.payload_size = payload_size
+# class Header:
+#     def __init__(self, msg_type=None, *args) -> None:
+#         self.msg_type = msg_type
+        
+#         self.filename, self.filesize = get_size(*args)
 
-class Payload:
-    def __init__(self) -> None:
-        self.filename_len = None
-        self.filename = None
-        self.filesize = None
-        self.file_data = None
+
+# class Payload:
+#     def __init__(self) -> None:
+#         self.filename_len = None
+#         self.filename = None
+#         self.filesize = None
+#         self.file_data = None
     
-    def get_size(self):
+#     def get_size(self):
 
 
-def header_send(sock: socket.socket, file: str | Path):
+def inform(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
-    # initializing header
-    fmt = '!QQ'
     fname_b = filename.encode()
     fname_length = len(fname_b)
 
-    header = struct.pack(fmt, filesize, fname_length)
-    packet = header + fname_b
+    payload = (
+        struct.pack('!H', fname_length)
+        + fname_b
+        + struct.pack('!Q', filesize)
+    )
+
+    header = struct.pack('!HQ', INFORM_FILE_DATA, len(payload))
+
+    packet = header + payload
 
     sock.sendall(packet)
 
-def header_recv(sock):
-        fmt = '!QQ'
-        fmt_size = struct.calcsize(fmt)
+def get_inform(sock, payload_len):
+    offset = 0
+    payload = recv_all(sock, payload_len)
 
-        header = recv_all(sock, fmt_size)
+    fname_len = struct.unpack(
+        '!H',
+        payload[offset:offset + struct.calcsize('!H')]
+    )[0]
 
-        filesize, fname_length = struct.unpack(fmt, header)
-        # print(filesize, fname_length)
-        fname_b = recv_all(sock, fname_length)
-        print(fname_b)
+    offset += struct.calcsize('!H')
+
+    filename = payload[offset:offset + fname_len].decode()
+
+    offset += fname_len
+
+    filesize = struct.unpack(
+        '!Q',
+        payload[offset:]
+    )[0]
+
+    print(f'{filename} -> {filesize} B')
 
 if __name__ == '__main__':
     while True:
@@ -84,8 +102,14 @@ if __name__ == '__main__':
             elif choice in ('1', '2') and choice == '2':
                 with socket.create_server(('127.0.0.1', 2001)) as server:
                     connection, address = server.accept()
-                    # print(f'Established: "{address[0]:{address[1]}}"')
-                    header_recv(connection)
+                    fmt = '!HQ'
+                    fmt_size = struct.calcsize(fmt)
+
+                    header = recv_all(connection, fmt_size)
+
+                    msg_type, payload_len = struct.unpack(fmt, header)
+                    if msg_type == INFORM_FILE_DATA:
+                        get_inform(connection, payload_len)
             else:
                 print('Invalid response!')
                 continue
