@@ -33,25 +33,33 @@ def recv_all(sock, total):
 
 def send_file(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
-    fmt = '!Q'
-    filesize_b = struct.pack(fmt, filesize)
+    # fmt = '!Q'
+    # filesize_b = struct.pack(fmt, filesize)
+    filename_b = filename.encode()
+    filename_len = len(filename_b)
 
-    sock.sendall(filesize_b)
+    file_info = struct.pack(
+        '!HQ', filename_len, filesize
+    )
+
+    packet = file_info + filename_b
+
+    sock.sendall(packet)
 
     with open(file, mode='br') as f:
         while read_bytes := f.read(1024):
             sock.sendall(read_bytes)
 
-def receive_file_info(sock):
-    amount = struct.calcsize('!Q')
-    received_bytes = recv_all(sock, amount)
+def receive_file_size(sock):
+    expected_bytes = struct.calcsize('!HQ')
+    received_bytes = recv_all(sock, expected_bytes)
 
     filesize = struct.unpack('!Q', received_bytes)[0]
 
     return filesize
 
 def receive_file(sock):
-    filesize = receive_file_info(sock)
+    filesize = receive_file_size(sock)
 
     with open()
 
