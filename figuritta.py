@@ -33,8 +33,6 @@ def recv_all(sock, total):
 
 def send_file(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
-    # fmt = '!Q'
-    # filesize_b = struct.pack(fmt, filesize)
     filename_b = filename.encode()
     filename_len = len(filename_b)
 
@@ -63,16 +61,16 @@ def receive_file_info(sock):
 
 def receive_file(sock):
     filename, filesize = receive_file_info(sock)
-    print(filesize)
+
     with open(f'inbox/{filename}', 'wb') as f:
         received_bytes = 0
         while received_bytes < filesize:
-            chunk = recv_all(sock, 1024)
+            chunk = sock.recv(1024)
             if chunk:
                 f.write(chunk)
                 received_bytes += len(chunk)
     
-    print(f'received: {received_bytes} bytes')
+    return received_bytes
 
 if __name__ == '__main__':
     try:
