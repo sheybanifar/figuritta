@@ -50,43 +50,45 @@ def send_file(sock: socket.socket, file: str | Path):
         while read_bytes := f.read(1024):
             sock.sendall(read_bytes)
 
-def receive_file_size(sock):
+def receive_file_info(sock):
     expected_bytes = struct.calcsize('!HQ')
     received_bytes = recv_all(sock, expected_bytes)
 
-    filesize = struct.unpack('!Q', received_bytes)[0]
+    filename_len, filesize = struct.unpack('!HQ', received_bytes)
 
-    return filesize
+    filename_b = recv_all(sock, filename_len)
+    filename = filename_b.decode()
+
+    return filename, filesize
 
 def receive_file(sock):
-    filesize = receive_file_size(sock)
-
-    with open()
+    filename, filesize = receive_file_info(sock)
+    print(filesize)
+    with open(f'inbox/{filename}', 'wb') as f:
+        received_bytes = 0
+        while received_bytes < filesize:
+            chunk = recv_all(sock, 1024)
+            if chunk:
+                f.write(chunk)
+                received_bytes += len(chunk)
+    
+    print(f'received: {received_bytes} bytes')
 
 if __name__ == '__main__':
-    while True:
-        try:
-            print('1- Send')
-            print('2- Receive')
-            choice = input('Which one? ')
+    try:
+        print('1- Send')
+        print('2- Receive')
+        choice = input('Which one? ')
 
-            if choice in ('1', '2') and choice == '1':
-                file = input('Enter file path to send: ')
-                with socket.create_connection(('127.0.0.1', 2001)) as client:
-                    inform(client, file)
-            elif choice in ('1', '2') and choice == '2':
-                with socket.create_server(('127.0.0.1', 2001)) as server:
-                    connection, address = server.accept()
-                    fmt = '!HQ'
-                    fmt_size = struct.calcsize(fmt)
-
-                    header = recv_all(connection, fmt_size)
-
-                    msg_type, payload_len = struct.unpack(fmt, header)
-                    if msg_type == INFORM_FILE_DATA:
-                        get_inform(connection, payload_len)
-            else:
-                print('Invalid response!')
-                continue
-        except KeyboardInterrupt:
-            break
+        if choice in ('1', '2') and choice == '1':
+            file = input('Enter file path to send: ')
+            with socket.create_connection(('127.0.0.1', 2001)) as client:
+                send_file(client, file)
+        elif choice in ('1', '2') and choice == '2':
+            with socket.create_server(('127.0.0.1', 2001)) as server:
+                connection, address = server.accept()
+                receive_file(connection)
+        else:
+            print('Invalid response!')
+    except (KeyboardInterrupt, EOFError):
+        exit()
