@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 import socket
 import struct
 from pathlib import Path
@@ -22,7 +24,7 @@ def recv_all(sock, total):
     expected_bytes = total
     received_bytes = 0
 
-    stream = bytes()
+    stream = bytearray()
 
     while received_bytes < expected_bytes:
         chunk = sock.recv(expected_bytes - received_bytes)
@@ -31,9 +33,9 @@ def recv_all(sock, total):
             raise ConnectionError('Connection was broken while receiving data!')
 
         received_bytes += len(chunk)
-        stream += chunk
+        stream.extend(chunk)
     
-    return stream
+    return bytes(stream)
 
 def send_file(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
@@ -48,9 +50,16 @@ def send_file(sock: socket.socket, file: str | Path):
 
     sock.sendall(packet)
 
-    with open(file, mode='br') as f:
+    with open(file, mode='br') as f, tqdm(
+        total=filesize,
+        unit='B',
+        unit_scale=True,
+        unit_divisor=1024,
+        desc='Sending'
+    ) as progress:
         while read_bytes := f.read(1024):
             sock.sendall(read_bytes)
+            progress.update(len(read_bytes))
 
 def receive_file_info(sock):
     expected_bytes = struct.calcsize('!HQ')
@@ -68,13 +77,20 @@ def receive_file(sock):
 
     with open(f'inbox/{filename}', 'wb') as f:
         received_bytes = 0
-        remaining = 0
-        while received_bytes < filesize:
-            remaining = filesize - received_bytes
-            chunk = recv_all(sock, min(remaining, 1024 * 64))
-            if chunk:
-                f.write(chunk)
-                received_bytes += len(chunk)
+        with tqdm(
+            total=filesize,
+            unit='B',
+            unit_scale=True,
+            unit_divisor=1024,
+            desc='Receiving'
+        ) as progress:
+            while received_bytes < filesize:
+                remaining = filesize - received_bytes
+                chunk = recv_all(sock, min(remaining, 1024 * 64))
+                if chunk:
+                    f.write(chunk)
+                    received_bytes += len(chunk)
+                    progress.update(len(chunk))
     
     return received_bytes
 
