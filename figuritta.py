@@ -26,6 +26,10 @@ def recv_all(sock, total):
 
     while received_bytes < expected_bytes:
         chunk = sock.recv(expected_bytes - received_bytes)
+
+        if not chunk:
+            raise ConnectionError('Connection was broken while receiving data!')
+
         received_bytes += len(chunk)
         stream += chunk
     
@@ -64,8 +68,10 @@ def receive_file(sock):
 
     with open(f'inbox/{filename}', 'wb') as f:
         received_bytes = 0
+        remaining = 0
         while received_bytes < filesize:
-            chunk = sock.recv(1024)
+            remaining = filesize - received_bytes
+            chunk = recv_all(sock, min(remaining, 1024 * 64))
             if chunk:
                 f.write(chunk)
                 received_bytes += len(chunk)
