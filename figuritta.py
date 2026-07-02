@@ -3,6 +3,7 @@ from tqdm import tqdm
 import socket
 import struct
 from pathlib import Path
+from enum import IntEnum
 
 class OperationError(Exception):
     pass
@@ -18,7 +19,7 @@ def get_size(file: str | Path):
             filename = path_obj.name
             filesize = path_obj.stat().st_size
             return (filename, filesize)
-        raise OperationError('File not found!')
+        raise FileNotFoundError('File not found!')
 
 def recv_all(sock, total):
     expected_bytes = total
@@ -36,6 +37,28 @@ def recv_all(sock, total):
         stream.extend(chunk)
     
     return bytes(stream)
+
+HEADER_STRUCT = struct.Struct('!BBQH')
+
+class MessageType(IntEnum):
+    FILE_INFO = 1
+    FILE_CHUNK = 2
+    END_OF_FILE = 3
+    END_OF_TRANSFER = 4
+
+def send_message(sock: socket.socket, msg_type: int, payload):
+    version = 1
+    header = HEADER_STRUCT.pack(version, msg_type, len(payload), 0)
+    packet = header + payload
+
+    sock.sendall(packet)
+
+def recv_message(sock: socket.socket):
+    header = recv_all(sock, HEADER_STRUCT.size)
+    version, msg_type, payload_length, reserved = HEADER_STRUCT.unpack(header)
+    payload = recv_all(sock, payload_length)
+    return msg_type, payload
+
 
 def send_file(sock: socket.socket, file: str | Path):
     filename, filesize = get_size(file)
