@@ -8,7 +8,7 @@ from enum import IntEnum
 class OperationError(Exception):
     pass
 
-def get_size(file: str | Path):
+def get_file_info(file: str | Path):
     if isinstance(file, Path) and file.exists():
         filename = file.name
         filesize = file.stat().st_size
@@ -39,12 +39,36 @@ def recv_all(sock, total):
     return bytes(stream)
 
 HEADER_STRUCT = struct.Struct('!BBQH')
+STRUCT16 = struct.Struct('!H')
+STRUCT64 = struct.Struct('!Q')
 
 class MessageType(IntEnum):
     FILE_INFO = 1
     FILE_CHUNK = 2
-    END_OF_FILE = 3
-    END_OF_TRANSFER = 4
+    END_OF_TRANSFER = 3
+
+def build_file_info_payload(filename: str, filesize: int):
+    filename_b = filename.encode()
+    filename_len = len(filename_b)
+
+    payload = (
+        STRUCT16.pack(filename_len)
+        + filename_b
+        + STRUCT64.pack(filesize)
+    )
+
+    return payload
+
+def parse_file_info_payload(payload: bytes):
+    filename_len = STRUCT16.unpack_from(payload)[0]
+    offset = STRUCT16.size
+
+    filename = payload[offset:offset + filename_len].decode()
+    offset += filename_len
+
+    filesize: int = STRUCT64.unpack_from(offset)[0]
+
+    return filename, filesize
 
 def send_message(sock: socket.socket, msg_type: int, payload):
     version = 1
@@ -61,7 +85,7 @@ def recv_message(sock: socket.socket):
 
 
 def send_file(sock: socket.socket, file: str | Path):
-    filename, filesize = get_size(file)
+    filename, filesize = get_file_info(file)
     filename_b = filename.encode()
     filename_len = len(filename_b)
 
