@@ -47,7 +47,8 @@ class MessageType(IntEnum):
     FILE_CHUNK = 2
     END_OF_TRANSFER = 3
 
-def build_file_info_payload(filename: str, filesize: int):
+def build_file_info_payload(file: str | Path):
+    filename, filesize = get_file_info(file)
     filename_b = filename.encode()
     filename_len = len(filename_b)
 
@@ -85,28 +86,38 @@ def recv_message(sock: socket.socket):
 
 
 def send_file(sock: socket.socket, file: str | Path):
-    filename, filesize = get_file_info(file)
-    filename_b = filename.encode()
-    filename_len = len(filename_b)
-
-    file_info = struct.pack(
-        '!HQ', filename_len, filesize
+    file_info_payload = build_file_info_payload(file)
+    send_message(
+        sock, MessageType.FILE_INFO, file_info_payload
     )
+    with open(file, mode='rb') as f:
+        while chunk := f.read(1024 * 64):
+            send_message(
+                sock, MessageType.FILE_CHUNK, chunk
+            )
 
-    packet = file_info + filename_b
+    # filename, filesize = get_file_info(file)
+    # filename_b = filename.encode()
+    # filename_len = len(filename_b)
 
-    sock.sendall(packet)
+    # file_info = struct.pack(
+    #     '!HQ', filename_len, filesize
+    # )
 
-    with open(file, mode='br') as f, tqdm(
-        total=filesize,
-        unit='B',
-        unit_scale=True,
-        unit_divisor=1024,
-        desc='Sending'
-    ) as progress:
-        while read_bytes := f.read(1024):
-            sock.sendall(read_bytes)
-            progress.update(len(read_bytes))
+    # packet = file_info + filename_b
+
+    # sock.sendall(packet)
+
+    # with open(file, mode='br') as f, tqdm(
+    #     total=filesize,
+    #     unit='B',
+    #     unit_scale=True,
+    #     unit_divisor=1024,
+    #     desc='Sending'
+    # ) as progress:
+    #     while read_bytes := f.read(1024):
+    #         sock.sendall(read_bytes)
+    #         progress.update(len(read_bytes))
 
 def receive_file_info(sock):
     expected_bytes = struct.calcsize('!HQ')
@@ -120,26 +131,40 @@ def receive_file_info(sock):
     return filename, filesize
 
 def receive_file(sock):
-    filename, filesize = receive_file_info(sock)
+    msg_type, payload = recv_message(sock)
+    if msg_type == MessageType.FILE_INFO:
+        filename, filesize = parse_file_info_payload(payload)
 
-    with open(f'inbox/{filename}', 'wb') as f:
-        received_bytes = 0
-        with tqdm(
-            total=filesize,
-            unit='B',
-            unit_scale=True,
-            unit_divisor=1024,
-            desc='Receiving'
-        ) as progress:
+        with open(f'inbox/{filename}', 'bx+') as f:
+            received_bytes = 0
             while received_bytes < filesize:
-                remaining = filesize - received_bytes
-                chunk = recv_all(sock, min(remaining, 1024 * 64))
-                if chunk:
+                msg_type, chunk = recv_message(sock)
+                if msg_type == MessageType.FILE_CHUNK:
                     f.write(chunk)
                     received_bytes += len(chunk)
-                    progress.update(len(chunk))
+                else:
+                    raise OperationError('Invalid message type!')
+
+    # filename, filesize = receive_file_info(sock)
+
+    # with open(f'inbox/{filename}', 'wb') as f:
+    #     received_bytes = 0
+    #     with tqdm(
+    #         total=filesize,
+    #         unit='B',
+    #         unit_scale=True,
+    #         unit_divisor=1024,
+    #         desc='Receiving'
+    #     ) as progress:
+    #         while received_bytes < filesize:
+    #             remaining = filesize - received_bytes
+    #             chunk = recv_all(sock, min(remaining, 1024 * 64))
+    #             if chunk:
+    #                 f.write(chunk)
+    #                 received_bytes += len(chunk)
+    #                 progress.update(len(chunk))
     
-    return received_bytes
+    # return received_bytes
 
 if __name__ == '__main__':
     try:
