@@ -1,25 +1,19 @@
-from tqdm import tqdm
-
 import socket
 import struct
 from pathlib import Path
 from enum import IntEnum
 
+PROTOCOL_VERSION = 1
+CHUNK_SIZE = 1024 * 64
+
 class OperationError(Exception):
     pass
 
 def get_file_info(file: str | Path):
-    if isinstance(file, Path) and file.exists():
-        filename = file.name
-        filesize = file.stat().st_size
-        return (filename, filesize)
-    else:
-        path_obj = Path(file)
-        if path_obj.exists():
-            filename = path_obj.name
-            filesize = path_obj.stat().st_size
-            return (filename, filesize)
+    path = Path(file)
+    if not path.exists():
         raise FileNotFoundError('File not found!')
+    return path.name, path.stat().st_size
 
 def recv_all(sock, total):
     expected_bytes = total
@@ -67,23 +61,30 @@ def parse_file_info_payload(payload: bytes):
     filename = payload[offset:offset + filename_len].decode()
     offset += filename_len
 
-    filesize: int = STRUCT64.unpack_from(offset)[0]
+    filesize: int = STRUCT64.unpack_from(payload, offset)[0]
 
     return filename, filesize
 
-def send_message(sock: socket.socket, msg_type: int, payload):
-    version = 1
+def send_message(sock: socket.socket, msg_type: MessageType, payload: bytes):
+    version = PROTOCOL_VERSION
     header = HEADER_STRUCT.pack(version, msg_type, len(payload), 0)
     packet = header + payload
 
     sock.sendall(packet)
 
-def recv_message(sock: socket.socket):
+def recv_message(sock: socket.socket) -> tuple[MessageType, bytes]:
     header = recv_all(sock, HEADER_STRUCT.size)
     version, msg_type, payload_length, reserved = HEADER_STRUCT.unpack(header)
+    msg_type = MessageType(msg_type)
+
+    if version != PROTOCOL_VERSION:
+        raise OperationError('Incorrect protocol version!')
+    
+    if reserved != 0:
+        raise OperationError('Bad Header!')
+
     payload = recv_all(sock, payload_length)
     return msg_type, payload
-
 
 def send_file(sock: socket.socket, file: str | Path):
     file_info_payload = build_file_info_payload(file)
@@ -91,80 +92,31 @@ def send_file(sock: socket.socket, file: str | Path):
         sock, MessageType.FILE_INFO, file_info_payload
     )
     with open(file, mode='rb') as f:
-        while chunk := f.read(1024 * 64):
+        while chunk := f.read(CHUNK_SIZE):
             send_message(
                 sock, MessageType.FILE_CHUNK, chunk
             )
 
-    # filename, filesize = get_file_info(file)
-    # filename_b = filename.encode()
-    # filename_len = len(filename_b)
-
-    # file_info = struct.pack(
-    #     '!HQ', filename_len, filesize
-    # )
-
-    # packet = file_info + filename_b
-
-    # sock.sendall(packet)
-
-    # with open(file, mode='br') as f, tqdm(
-    #     total=filesize,
-    #     unit='B',
-    #     unit_scale=True,
-    #     unit_divisor=1024,
-    #     desc='Sending'
-    # ) as progress:
-    #     while read_bytes := f.read(1024):
-    #         sock.sendall(read_bytes)
-    #         progress.update(len(read_bytes))
-
-def receive_file_info(sock):
-    expected_bytes = struct.calcsize('!HQ')
-    received_bytes = recv_all(sock, expected_bytes)
-
-    filename_len, filesize = struct.unpack('!HQ', received_bytes)
-
-    filename_b = recv_all(sock, filename_len)
-    filename = filename_b.decode()
-
-    return filename, filesize
-
-def receive_file(sock):
+def receive_file(sock, dst_dir: str | Path):
     msg_type, payload = recv_message(sock)
-    if msg_type == MessageType.FILE_INFO:
-        filename, filesize = parse_file_info_payload(payload)
-
-        with open(f'inbox/{filename}', 'bx+') as f:
-            received_bytes = 0
-            while received_bytes < filesize:
-                msg_type, chunk = recv_message(sock)
-                if msg_type == MessageType.FILE_CHUNK:
-                    f.write(chunk)
-                    received_bytes += len(chunk)
-                else:
-                    raise OperationError('Invalid message type!')
-
-    # filename, filesize = receive_file_info(sock)
-
-    # with open(f'inbox/{filename}', 'wb') as f:
-    #     received_bytes = 0
-    #     with tqdm(
-    #         total=filesize,
-    #         unit='B',
-    #         unit_scale=True,
-    #         unit_divisor=1024,
-    #         desc='Receiving'
-    #     ) as progress:
-    #         while received_bytes < filesize:
-    #             remaining = filesize - received_bytes
-    #             chunk = recv_all(sock, min(remaining, 1024 * 64))
-    #             if chunk:
-    #                 f.write(chunk)
-    #                 received_bytes += len(chunk)
-    #                 progress.update(len(chunk))
+    if msg_type != MessageType.FILE_INFO:
+        raise OperationError('Expected FILE_INFO.')
     
-    # return received_bytes
+    filename, filesize = parse_file_info_payload(payload)
+
+    with open(Path(dst_dir) / filename, 'bx+') as f:
+        received_bytes = 0
+        while received_bytes < filesize:
+            # Protocol guarantees that every FILE_CHUNK
+            # after FILE_INFO belongs to the current file.
+            msg_type, chunk = recv_message(sock)
+            if msg_type == MessageType.FILE_CHUNK:
+                f.write(chunk)
+                received_bytes += len(chunk)
+            else:
+                raise OperationError('Invalid message type!')
+    
+    return Path(dst_dir) / filename
 
 if __name__ == '__main__':
     try:
@@ -179,7 +131,7 @@ if __name__ == '__main__':
         elif choice in ('1', '2') and choice == '2':
             with socket.create_server(('127.0.0.1', 2001)) as server:
                 connection, address = server.accept()
-                receive_file(connection)
+                receive_file(connection, 'inbox/')
         else:
             print('Invalid response!')
     except (KeyboardInterrupt, EOFError):
