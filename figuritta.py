@@ -86,24 +86,7 @@ def recv_message(sock: socket.socket) -> tuple[MessageType, bytes]:
     payload = recv_all(sock, payload_length)
     return msg_type, payload
 
-def send_file(sock: socket.socket, file: str | Path):
-    file_info_payload = build_file_info_payload(file)
-    send_message(
-        sock, MessageType.FILE_INFO, file_info_payload
-    )
-    with open(file, mode='rb') as f:
-        while chunk := f.read(CHUNK_SIZE):
-            send_message(
-                sock, MessageType.FILE_CHUNK, chunk
-            )
-
-def receive_file(sock, dst_dir: str | Path):
-    msg_type, payload = recv_message(sock)
-    if msg_type != MessageType.FILE_INFO:
-        raise OperationError('Expected FILE_INFO.')
-    
-    filename, filesize = parse_file_info_payload(payload)
-
+def receive_file_chunks(sock, filename, filesize, dst_dir):
     with open(Path(dst_dir) / filename, 'bx+') as f:
         received_bytes = 0
         while received_bytes < filesize:
@@ -117,6 +100,53 @@ def receive_file(sock, dst_dir: str | Path):
             received_bytes += len(chunk)
     
     return Path(dst_dir) / filename
+
+def send_file(sock: socket.socket, file: str | Path):
+    file_info_payload = build_file_info_payload(file)
+    send_message(
+        sock, MessageType.FILE_INFO, file_info_payload
+    )
+    with open(file, mode='rb') as f:
+        while chunk := f.read(CHUNK_SIZE):
+            send_message(
+                sock, MessageType.FILE_CHUNK, chunk
+            )
+
+def send_files(sock: socket.socket, files):
+    for file in files:
+        send_file(sock, file)
+
+    send_message(
+        sock,
+        MessageType.END_OF_TRANSFER,
+        b''
+    )
+
+def receive_file(sock, dst_dir: str | Path):
+    msg_type, payload = recv_message(sock)
+    msg_type = MessageType(msg_type)
+
+    if msg_type != MessageType.FILE_INFO:
+        raise OperationError('Expected FILE_INFO.')
+    
+    filename, filesize = parse_file_info_payload(payload)
+
+    receive_file_chunks(sock, filename, filesize, dst_dir)
+
+def receive_files(sock: socket.socket, dst_dir: str | Path):
+    while True:
+        msg_type, payload = recv_message(sock)
+        msg_type = MessageType(msg_type)
+
+        if msg_type != MessageType.FILE_INFO:
+            raise OperationError('Incorrect message type!')
+        elif msg_type == MessageType.END_OF_TRANSFER:
+            break
+        
+        filename, filesize = parse_file_info_payload(payload)
+
+        receive_file_chunks(sock, filename, filesize, dst_dir)
+        
 
 if __name__ == '__main__':
     try:
