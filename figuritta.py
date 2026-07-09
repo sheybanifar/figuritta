@@ -110,11 +110,11 @@ def receive_file(sock, dst_dir: str | Path):
             # Protocol guarantees that every FILE_CHUNK
             # after FILE_INFO belongs to the current file.
             msg_type, chunk = recv_message(sock)
-            if msg_type == MessageType.FILE_CHUNK:
-                f.write(chunk)
-                received_bytes += len(chunk)
-            else:
+            if msg_type != MessageType.FILE_CHUNK:
                 raise OperationError('Invalid message type!')
+            
+            f.write(chunk)
+            received_bytes += len(chunk)
     
     return Path(dst_dir) / filename
 
