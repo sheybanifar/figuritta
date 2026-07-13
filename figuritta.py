@@ -2,6 +2,7 @@ import socket
 import struct
 from pathlib import Path
 from enum import IntEnum
+from collections.abc import Iterable
 
 PROTOCOL_VERSION = 1
 CHUNK_SIZE = 1024 * 64
@@ -86,21 +87,6 @@ def recv_message(sock: socket.socket) -> tuple[MessageType, bytes]:
     payload = recv_all(sock, payload_length)
     return msg_type, payload
 
-def receive_file_chunks(sock, filename, filesize, dst_dir):
-    with open(Path(dst_dir) / filename, 'bx+') as f:
-        received_bytes = 0
-        while received_bytes < filesize:
-            # Protocol guarantees that every FILE_CHUNK
-            # after FILE_INFO belongs to the current file.
-            msg_type, chunk = recv_message(sock)
-            if msg_type != MessageType.FILE_CHUNK:
-                raise OperationError('Invalid message type!')
-            
-            f.write(chunk)
-            received_bytes += len(chunk)
-    
-    return Path(dst_dir) / filename
-
 def send_file(sock: socket.socket, file: str | Path):
     file_info_payload = build_file_info_payload(file)
     send_message(
@@ -112,7 +98,7 @@ def send_file(sock: socket.socket, file: str | Path):
                 sock, MessageType.FILE_CHUNK, chunk
             )
 
-def send_files(sock: socket.socket, files):
+def send_files(sock: socket.socket, files: Iterable[str | Path]):
     for file in files:
         send_file(sock, file)
 
@@ -122,47 +108,73 @@ def send_files(sock: socket.socket, files):
         b''
     )
 
-def receive_file(sock, dst_dir: str | Path):
+def receive_file_chunks(
+        sock: socket.socket,
+        filename: str,
+        filesize: int,
+        dst_dir: str | Path
+        ):
+    path = Path(dst_dir) / filename
+    with open(path, 'bx+') as f:
+        received_bytes = 0
+        while received_bytes < filesize:
+            # Protocol guarantees that every FILE_CHUNK
+            # after FILE_INFO belongs to the current file.
+            msg_type, chunk = recv_message(sock)
+            if msg_type != MessageType.FILE_CHUNK:
+                raise OperationError('Invalid message type!')
+            
+            f.write(chunk)
+            received_bytes += len(chunk)
+    
+    return path
+
+def receive_file(sock: socket.socket, dst_dir: str | Path):
     msg_type, payload = recv_message(sock)
-    msg_type = MessageType(msg_type)
 
     if msg_type != MessageType.FILE_INFO:
         raise OperationError('Expected FILE_INFO.')
     
     filename, filesize = parse_file_info_payload(payload)
 
-    receive_file_chunks(sock, filename, filesize, dst_dir)
+    return receive_file_chunks(sock, filename, filesize, dst_dir)
 
 def receive_files(sock: socket.socket, dst_dir: str | Path):
+    received_files = []
     while True:
         msg_type, payload = recv_message(sock)
-        msg_type = MessageType(msg_type)
 
-        if msg_type != MessageType.FILE_INFO:
-            raise OperationError('Incorrect message type!')
-        elif msg_type == MessageType.END_OF_TRANSFER:
+        if msg_type == MessageType.END_OF_TRANSFER:
             break
+        if msg_type != MessageType.FILE_INFO:
+            raise OperationError('Expected FILE_INFO or END_OF_TRANSFER!')
         
         filename, filesize = parse_file_info_payload(payload)
 
-        receive_file_chunks(sock, filename, filesize, dst_dir)
-        
+        path = receive_file_chunks(sock, filename, filesize, dst_dir)
+        if path:
+            received_files.append(path)
+    
+    return receive_files
+
+def path_extract(user_input: str):
+    
 
 if __name__ == '__main__':
+    print('1- Send')
+    print('2- Receive')
     try:
-        print('1- Send')
-        print('2- Receive')
         choice = input('Which one? ')
-
-        if choice in ('1', '2') and choice == '1':
-            file = input('Enter file path to send: ')
-            with socket.create_connection(('127.0.0.1', 2001)) as client:
-                send_file(client, file)
-        elif choice in ('1', '2') and choice == '2':
-            with socket.create_server(('127.0.0.1', 2001)) as server:
-                connection, address = server.accept()
-                receive_file(connection, 'inbox/')
-        else:
-            print('Invalid response!')
     except (KeyboardInterrupt, EOFError):
         exit()
+    if choice in ('1', '2') and choice == '1':
+        file = input('Enter file path to send: ')
+        with socket.create_connection(('127.0.0.1', 2001)) as client:
+            send_file(client, file)
+    elif choice in ('1', '2') and choice == '2':
+        with socket.create_server(('127.0.0.1', 2001)) as server:
+            connection, address = server.accept()
+            receive_file(connection, 'inbox/')
+    else:
+        print('Invalid response!')
+    
