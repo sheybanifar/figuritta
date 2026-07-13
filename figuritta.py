@@ -158,7 +158,8 @@ def receive_files(sock: socket.socket, dst_dir: str | Path):
     return receive_files
 
 def path_extract(user_input: str):
-    
+    paths = user_input.split()
+    paths = [p.strip() for p in paths if p.strip()]
 
 if __name__ == '__main__':
     print('1- Send')
