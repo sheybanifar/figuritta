@@ -159,7 +159,11 @@ def receive_files(sock: socket.socket, dst_dir: str | Path):
 
 def path_extract(user_input: str):
     paths = user_input.split()
-    paths = [p.strip() for p in paths if p.strip()]
+    paths = [Path(p.strip('\'"')) for p in paths if p.strip('\'"')]
+    paths = [p for p in paths if p.exists()]
+    paths = set(paths)
+
+    return paths
 
 if __name__ == '__main__':
     print('1- Send')
@@ -169,13 +173,15 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, EOFError):
         exit()
     if choice in ('1', '2') and choice == '1':
-        file = input('Enter file path to send: ')
+        user_input = input('Enter file path to send: ')
+        files = path_extract(user_input)
+        print(files)
         with socket.create_connection(('127.0.0.1', 2001)) as client:
-            send_file(client, file)
+            send_files(client, files)
     elif choice in ('1', '2') and choice == '2':
         with socket.create_server(('127.0.0.1', 2001)) as server:
             connection, address = server.accept()
-            receive_file(connection, 'inbox/')
+            receive_files(connection, 'inbox/')
     else:
         print('Invalid response!')
     
