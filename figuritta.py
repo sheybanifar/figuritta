@@ -161,12 +161,13 @@ def receive_files(sock: socket.socket, dst_dir: str | Path):
 def path_extract(user_input: str):
     pattern = "['\"](.+?)['\"]"
 
-    paths = re.findall(pattern, user_input)
-    paths = [Path(p.strip()) for p in paths if len(p)]
-    paths = [p for p in paths if p.exists()]
-    
-    for p in paths:
-        
+    directories = re.findall(pattern, user_input)
+    paths = [Path(d.strip()) for d in directories if len(d)]
+    try:
+        paths = [str(p.resolve()) for p in paths if p.exists() and p.is_file()]
+    except Exception as error:
+        raise error
+    paths = set(paths)
 
     return paths
 
@@ -180,13 +181,13 @@ if __name__ == '__main__':
     if choice in ('1', '2') and choice == '1':
         user_input = input('Enter file path to send: ')
         files = path_extract(user_input)
-        print(files)
         with socket.create_connection(('127.0.0.1', 2001)) as client:
             send_files(client, files)
     elif choice in ('1', '2') and choice == '2':
         with socket.create_server(('127.0.0.1', 2001)) as server:
             connection, address = server.accept()
-            receive_files(connection, 'inbox/')
+            files_gathered = receive_files(connection, 'inbox/')
+            print(f'{len(files_gathered)} files received successfully!')
     else:
         print('Invalid response!')
     
