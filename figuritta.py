@@ -3,6 +3,7 @@ import struct
 from pathlib import Path
 from enum import IntEnum
 from collections.abc import Iterable
+import re
 
 PROTOCOL_VERSION = 1
 CHUNK_SIZE = 1024 * 64
@@ -158,10 +159,14 @@ def receive_files(sock: socket.socket, dst_dir: str | Path):
     return receive_files
 
 def path_extract(user_input: str):
-    paths = user_input.split()
-    paths = [Path(p.strip('\'"')) for p in paths if p.strip('\'"')]
+    pattern = "['\"](.+?)['\"]"
+
+    paths = re.findall(pattern, user_input)
+    paths = [Path(p.strip()) for p in paths if len(p)]
     paths = [p for p in paths if p.exists()]
-    paths = set(paths)
+    
+    for p in paths:
+        
 
     return paths
 
